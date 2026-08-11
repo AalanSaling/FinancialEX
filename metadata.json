@@ -1,0 +1,6 @@
+{
+  "name": "FinancialEX",
+  "description": "App de finanças pessoais em tema dark de luxo (preto e roxo), com suporte a Português, Espanhol e Inglês, conversor de moedas em tempo real e relatórios PDF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
