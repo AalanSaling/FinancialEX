@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 
 import com.example.util.InvestmentHistoryHelper
 import com.example.util.InvestmentMovementLog
+import com.example.util.PinSecurityManager
 
 data class FinanceUiState(
     val transactions: List<TransactionEntity> = emptyList(),
@@ -28,7 +29,7 @@ data class FinanceUiState(
     val availableWorkspaces: List<String> = listOf("Pessoal", "Empresa / Negócios", "Viagens & Lazer", "Projetos"),
     val isAppLocked: Boolean = false,
     val isBiometricEnabled: Boolean = true,
-    val userPinCode: String = "1234",
+    val userPinCode: String = "",
     val isOfflineMode: Boolean = false,
     val isSyncingBank: Boolean = false,
     val showHideBalance: Boolean = false,
@@ -62,10 +63,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _customWorkspaces = MutableStateFlow(
         loadCustomWorkspaces(securityPrefs)
     )
-    private val _userPinCode = MutableStateFlow(securityPrefs.getString("user_pin_code", "") ?: "")
+    private val _userPinCode = MutableStateFlow(if (PinSecurityManager.hasPinSet(application)) "SET" else "")
     private val _isBiometricEnabled = MutableStateFlow(securityPrefs.getBoolean("is_biometric_enabled", false))
     private val _isAppLocked = MutableStateFlow(
-        securityPrefs.getBoolean("is_biometric_enabled", false) || (securityPrefs.getString("user_pin_code", "") ?: "").isNotBlank()
+        PinSecurityManager.hasPinSet(application) || _isBiometricEnabled.value
     )
     private val _isOfflineMode = MutableStateFlow(securityPrefs.getBoolean("is_offline_mode", false))
     private val _isSyncingBank = MutableStateFlow(false)
@@ -200,8 +201,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setUserPinCode(pin: String) {
-        securityPrefs.edit().putString("user_pin_code", pin).apply()
-        _userPinCode.value = pin
+        PinSecurityManager.savePin(getApplication(), pin)
+        _userPinCode.value = if (PinSecurityManager.hasPinSet(getApplication())) "SET" else ""
         _messageToast.value = "PIN de segurança cadastrado com sucesso!"
     }
 

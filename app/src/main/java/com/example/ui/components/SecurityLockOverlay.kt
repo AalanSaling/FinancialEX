@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.example.util.AppLanguage
+import com.example.util.PinSecurityManager
+import com.example.util.PinVerifyResult
 import com.example.util.Translations
 
 @Composable
@@ -40,7 +42,7 @@ fun SecurityLockOverlay(
     val context = LocalContext.current
     val activity = context as? FragmentActivity
 
-    val isPinAlreadySet = userPinCode.isNotBlank()
+    val isPinAlreadySet = PinSecurityManager.hasPinSet(context)
 
     var enteredPin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
@@ -50,7 +52,7 @@ fun SecurityLockOverlay(
         try {
             if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
                 val biometricManager = BiometricManager.from(activity)
-                val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+                val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG
                 when (biometricManager.canAuthenticate(authenticators)) {
                     BiometricManager.BIOMETRIC_SUCCESS -> {
                         val executor = ContextCompat.getMainExecutor(activity)
@@ -79,6 +81,7 @@ fun SecurityLockOverlay(
                             .setTitle(Translations.getString("auth_biometric", appLanguage))
                             .setSubtitle(Translations.getString("enter_pin_sub", appLanguage))
                             .setNegativeButtonText(Translations.getString("enter_pin", appLanguage))
+                            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                             .build()
 
                         biometricPrompt.authenticate(promptInfo)
@@ -103,7 +106,7 @@ fun SecurityLockOverlay(
 
     // Automatically trigger biometric prompt on lock overlay open
     LaunchedEffect(Unit) {
-        if (isPinAlreadySet || isBiometricEnabled) {
+        if (isPinAlreadySet && isBiometricEnabled) {
             kotlinx.coroutines.delay(300)
             try {
                 triggerBiometric()
@@ -173,11 +176,26 @@ fun SecurityLockOverlay(
                                 enteredPin = input
                                 errorMsg = null
                                 if (input.length == 4) {
-                                     if (input == userPinCode) {
-                                        onUnlock()
-                                    } else {
-                                        errorMsg = Translations.getString("incorrect_pin_msg", appLanguage)
-                                        enteredPin = ""
+                                    val result = PinSecurityManager.verifyPin(context, input)
+                                    when (result) {
+                                        is PinVerifyResult.Success -> {
+                                            onUnlock()
+                                        }
+                                        is PinVerifyResult.IncorrectPin -> {
+                                            enteredPin = ""
+                                            errorMsg = if (result.lockoutSeconds > 0) {
+                                                "PIN incorreto. Bloqueado por ${result.lockoutSeconds}s."
+                                            } else {
+                                                "${Translations.getString("incorrect_pin_msg", appLanguage)} (${result.failedAttempts}/5)"
+                                            }
+                                        }
+                                        is PinVerifyResult.LockedOut -> {
+                                            enteredPin = ""
+                                            errorMsg = "Acesso temporariamente bloqueado. Aguarde ${result.remainingSeconds}s."
+                                        }
+                                        is PinVerifyResult.NoPinSet -> {
+                                            onUnlock()
+                                        }
                                     }
                                 }
                             }
@@ -271,6 +289,7 @@ fun SecurityLockOverlay(
                             } else if (enteredPin != confirmPin) {
                                 errorMsg = Translations.getString("pin_mismatch_err", appLanguage)
                             } else {
+                                PinSecurityManager.savePin(context, enteredPin)
                                 onSetPin(enteredPin)
                                 onUnlock()
                             }

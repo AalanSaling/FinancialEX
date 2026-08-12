@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -26,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.util.AppLanguage
+import com.example.util.PinSecurityManager
+import com.example.util.PinVerifyResult
 import com.example.util.Translations
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,7 +47,9 @@ fun WorkspaceSetupModal(
     var selectedCurrency by remember { mutableStateOf(currentCurrency.ifBlank { "PYG" }) }
     var currencyExpanded by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
     var editingPin by remember { mutableStateOf(false) }
+    var currentPinInput by remember { mutableStateOf("") }
     var newPinInput by remember { mutableStateOf("") }
     var pinErrorMsg by remember { mutableStateOf<String?>(null) }
 
@@ -238,16 +243,17 @@ fun WorkspaceSetupModal(
                     }
 
                     if (isBiometricEnabled) {
+                        val hasPin = PinSecurityManager.hasPinSet(context)
                         if (!editingPin) {
                             OutlinedButton(
-                                onClick = { editingPin = true },
+                                onClick = { editingPin = true; currentPinInput = ""; newPinInput = ""; pinErrorMsg = null },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(imageVector = Icons.Default.Pin, contentDescription = null)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (userPinCode.isBlank()) Translations.getString("register_pin", currentLanguage) else Translations.getString("change_pin", currentLanguage),
+                                    text = if (!hasPin) Translations.getString("register_pin", currentLanguage) else Translations.getString("change_pin", currentLanguage),
                                     fontSize = 12.sp,
                                     maxLines = 1
                                 )
@@ -259,6 +265,23 @@ fun WorkspaceSetupModal(
                                     .padding(top = 4.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
+                                if (hasPin) {
+                                    OutlinedTextField(
+                                        value = currentPinInput,
+                                        onValueChange = {
+                                            if (it.length <= 4 && it.all { c -> c.isDigit() }) {
+                                                currentPinInput = it
+                                                pinErrorMsg = null
+                                            }
+                                        },
+                                        label = { Text("PIN Atual (4 dígitos)", fontSize = 11.sp) },
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+
                                 OutlinedTextField(
                                     value = newPinInput,
                                     onValueChange = {
@@ -267,7 +290,7 @@ fun WorkspaceSetupModal(
                                             pinErrorMsg = null
                                         }
                                     },
-                                    label = { Text(Translations.getString("register_pin", currentLanguage), fontSize = 11.sp) },
+                                    label = { Text(if (hasPin) "Novo PIN (4 dígitos)" else Translations.getString("register_pin", currentLanguage), fontSize = 11.sp) },
                                     visualTransformation = PasswordVisualTransformation(),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                                     singleLine = true,
@@ -287,7 +310,7 @@ fun WorkspaceSetupModal(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     OutlinedButton(
-                                        onClick = { editingPin = false; newPinInput = "" },
+                                        onClick = { editingPin = false; currentPinInput = ""; newPinInput = "" },
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(Translations.getString("cancel", currentLanguage), fontSize = 11.sp, maxLines = 1)
@@ -295,12 +318,21 @@ fun WorkspaceSetupModal(
 
                                     Button(
                                         onClick = {
+                                            if (hasPin) {
+                                                val verifyResult = PinSecurityManager.verifyPin(context, currentPinInput)
+                                                if (verifyResult !is PinVerifyResult.Success) {
+                                                    pinErrorMsg = "PIN atual incorreto"
+                                                    return@Button
+                                                }
+                                            }
                                             if (newPinInput.length == 4) {
+                                                PinSecurityManager.savePin(context, newPinInput)
                                                 onSetPin(newPinInput)
                                                 editingPin = false
+                                                currentPinInput = ""
                                                 newPinInput = ""
                                             } else {
-                                                pinErrorMsg = "PIN must be 4 digits"
+                                                pinErrorMsg = "Novo PIN deve ter 4 dígitos"
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
