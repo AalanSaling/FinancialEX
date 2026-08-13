@@ -34,7 +34,15 @@ object DatabasePassphraseManager {
                 val encryptedBytes = Base64.decode(encryptedPassphraseBase64, Base64.NO_WRAP)
                 return cipher.doFinal(encryptedBytes)
             } catch (e: Exception) {
-                android.util.Log.e("DatabasePassphrase", "Error decrypting passphrase from KeyStore", e)
+                android.util.Log.e("DatabasePassphrase", "CRITICAL: KeyStore decryption failed for database passphrase! KeyStore key lost/invalid.", e)
+                try {
+                    context.deleteDatabase("financas_db")
+                    context.deleteDatabase("financas_db_legacy_unencrypted")
+                    prefs.edit().remove(KEY_ENCRYPTED_PASSPHRASE).remove(KEY_PASSPHRASE_IV).apply()
+                } catch (cleanupEx: Exception) {
+                    android.util.Log.e("DatabasePassphrase", "Failed to cleanup corrupted database files after KeyStore error", cleanupEx)
+                }
+                throw IllegalStateException("CRITICAL_KEYSTORE_DECRYPTION_FAILED: O banco de dados cifrado anterior não pôde ser aberto porque as chaves do Android KeyStore foram perdidas ou invalidadas. O banco inacessível foi removido com segurança para prevenir corrupção e perda de dados.", e)
             }
         }
 
@@ -56,6 +64,7 @@ object DatabasePassphraseManager {
                 .apply()
         } catch (e: Exception) {
             android.util.Log.e("DatabasePassphrase", "Error encrypting passphrase with KeyStore", e)
+            throw IllegalStateException("CRITICAL_KEYSTORE_ENCRYPTION_FAILED: Unable to encrypt new database passphrase with KeyStore.", e)
         }
 
         return rawPassphrase
